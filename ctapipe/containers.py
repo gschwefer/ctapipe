@@ -244,6 +244,35 @@ class HillasParametersContainer(BaseHillasParametersContainer):
     psi = Field(nan * u.deg, "rotation angle of ellipse", unit=u.deg)
 
 
+class GaussianHillasParametersContainer(BaseHillasParametersContainer):
+    """
+    Hillas-like Parameters calculated from a fit of a gaussian ellipsoid to the image
+    in a spherical system centered on the pointing position
+    (TelescopeFrame). The cog position is given as offset in
+    longitude and latitude in degree.
+    """
+
+    default_prefix = "gaussian"
+    fov_lon = Field(
+        nan * u.deg,
+        "longitude angle in a spherical system centered on the pointing position",
+        unit=u.deg,
+    )
+    fov_lat = Field(
+        nan * u.deg,
+        "latitude angle in a spherical system centered on the pointing position",
+        unit=u.deg,
+    )
+    r = Field(nan * u.deg, "radial coordinate of centroid", unit=u.deg)
+    phi = Field(nan * u.deg, "polar coordinate of centroid", unit=u.deg)
+
+    length = Field(nan * u.deg, "standard deviation along the major-axis", unit=u.deg)
+    length_uncertainty = Field(nan * u.deg, "uncertainty of length", unit=u.deg)
+    width = Field(nan * u.deg, "standard spread along the minor-axis", unit=u.deg)
+    width_uncertainty = Field(nan * u.deg, "uncertainty of width", unit=u.deg)
+    psi = Field(nan * u.deg, "rotation angle of ellipse", unit=u.deg)
+
+
 class LeakageContainer(Container):
     """
     Fraction of signal in 1 or 2-pixel width border from the edge of the
@@ -367,6 +396,11 @@ class ImageParametersContainer(Container):
     hillas = Field(
         default_factory=HillasParametersContainer,
         description="Hillas Parameters",
+        type=BaseHillasParametersContainer,
+    )
+    gaussian = Field(
+        default_factory=GaussianHillasParametersContainer,
+        description="Image parmatrization through fit with gaussian",
         type=BaseHillasParametersContainer,
     )
     timing = Field(

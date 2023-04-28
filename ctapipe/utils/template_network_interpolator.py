@@ -142,7 +142,7 @@ class BaseTemplate:
 
         # Create interpolator using this selection
         self.interpolator[zenith_bin][azimuth_bin] = UnstructuredInterpolator(
-            self.keys[selection].T[2:].T,
+            self.keys[selection].T[2:5].T,
             self.values[selection],
             remember_last=True,
             bounds=self.bounds,

@@ -188,11 +188,22 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
 
         try:
             hillas_dict = self._create_hillas_dict(event)
-        except (TooFewTelescopesException, InvalidWidthException):
+        except InvalidWidthException:
             event.dl2.stereo.geometry[self.__class__.__name__] = INVALID_GEOMETRY
             event.dl2.stereo.energy[self.__class__.__name__] = INVALID_ENERGY
             self._store_impact_parameter(event)
             return
+        except TooFewTelescopesException:
+            hillas_dict = {
+                tel_id: dl1.parameters.hillas
+                for tel_id, dl1 in event.dl1.tel.items()
+                if all(self.quality_query(parameters=dl1.parameters))
+            }
+            if len(hillas_dict) < 1:
+                event.dl2.stereo.geometry[self.__class__.__name__] = INVALID_GEOMETRY
+                event.dl2.stereo.energy[self.__class__.__name__] = INVALID_ENERGY
+                self._store_impact_parameter(event)
+                return
 
         # Due to tracking the pointing of the array will never be a constant
         array_pointing = SkyCoord(

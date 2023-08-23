@@ -139,7 +139,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
 
         # String templates for loading ImPACT templates
         self.amplitude_template = Template("${base}/${camera}.template.gz")
-        self.time_template = Template("${base}/${camera}_time.template.gz")
+        self.time_template = Template("${base}/time/${camera}.template.gz")
 
         # We also need a conversion function from height above ground to
         # depth of maximum To do this we need the conversion table from CORSIKA
@@ -567,6 +567,9 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
                 time_mask = np.logical_and(
                     np.invert(ma.getmask(self.image[telescope_index])),
                     self.time[telescope_index] > 0,
+                )
+                time_mask = np.logical_and(
+                    time_mask, np.isfinite(self.time[telescope_index])
                 )
                 time_mask = np.logical_and(time_mask, self.image[telescope_index] > 5)
                 if np.sum(time_mask) > 3:

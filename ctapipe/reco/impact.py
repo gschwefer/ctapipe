@@ -580,7 +580,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
                     )[0][0]
 
                     time_like = -2 * norm.logpdf(
-                        time_slope,
+                        np.abs(time_slope),
                         loc=time_gradients[telescope_index],
                         scale=time_gradients_uncertainty[telescope_index],
                     )

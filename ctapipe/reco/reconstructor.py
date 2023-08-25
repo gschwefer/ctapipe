@@ -11,6 +11,7 @@ from ctapipe.containers import ArrayEventContainer, TelescopeImpactParameterCont
 from ctapipe.core import Provenance, QualityQuery, TelescopeComponent
 from ctapipe.core.traits import List
 
+from ..compat import StrEnum
 from ..coordinates import shower_impact_distance
 
 __all__ = [

@@ -3,11 +3,11 @@
 
 """
 import copy
-import pytest
 from string import Template
 
 import numpy as np
 import numpy.ma as ma
+import pytest
 from astropy import units as u
 from astropy.coordinates import AltAz, SkyCoord
 from iminuit import Minuit
@@ -574,7 +574,6 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
                 time_mask = np.logical_and(time_mask, self.image[telescope_index] > 5)
                 if (
                     np.sum(time_mask) > 3
-                    and time_gradients[telescope_index] > 0
                     and time_gradients_uncertainty[telescope_index] > 0
                 ):
                     time_slope = lts_linear_regression(
@@ -584,7 +583,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
                     )[0][0]
 
                     time_like = -2 * norm.logpdf(
-                        np.abs(time_slope),
+                        time_slope,
                         loc=time_gradients[telescope_index],
                         scale=time_gradients_uncertainty[telescope_index],
                     )
@@ -1008,7 +1007,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         self.min.strategy = 1
 
         # Fit and output parameters and errors
-        migrad = self.min.migrad(iterate=1)
+        _ = self.min.migrad(iterate=1)
         fit_params = self.min.values
         errors = self.min.errors
 

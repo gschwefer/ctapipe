@@ -27,10 +27,6 @@ from ..coordinates import (
 from ..core import Provenance
 from ..fitting import lts_linear_regression
 from ..image.cleaning import dilate
-from ..image.pixel_likelihood import (
-    mean_poisson_likelihood_gaussian,
-    neg_log_likelihood_approx,
-)
 from ..instrument import get_atmosphere_profile_functions
 from ..utils.deprecation import CTAPipeDeprecationWarning
 from ..utils.template_network_interpolator import (
@@ -188,7 +184,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         self.dummy_reconstructor = dummy_reconstructor
 
         self.ml_model = keras.saving.load_model(
-            "/lfs/l1/cta/gschwefer/impact_machine_learning/freedom/pixel_charge/models/14_MST_gammas_for_impact_test_1-100run_pixel_charge_freedom_ml_training_set_9000000_xpixrot_ypixrot_Xmax_d_E_4_dilation.keras",
+            "/lfs/l1/cta/gschwefer/impact_machine_learning/freedom/pixel_charge/models/14_MST_gammas_for_impact_test_1-100run_pixel_charge_freedom_ml_training_set_4000000_xpixrot_ypixrot_Xmax_d_E_2_dilation.keras",
         )
 
     def __call__(self, event):
@@ -541,26 +537,38 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
 
         # In the interpolator class we can gain speed advantages by using masked arrays
         # so we need to make sure here everything is masked
-        prediction = ma.zeros(self.image.shape)
-        prediction.mask = ma.getmask(self.image)
+        # prediction = ma.zeros(self.image.shape)
+        # prediction.mask = ma.getmask(self.image)
 
         time_gradients, time_gradients_uncertainty = np.zeros(
             self.image.shape[0]
         ), np.zeros(self.image.shape[0])
         # Loop over all telescope types and get prediction
+
+        image_like = np.zeros(self.image.shape, dtype=np.float64)
+
         for tel_type in np.unique(self.tel_types).tolist():
             type_mask = self.tel_types == tel_type
 
-            prediction[type_mask] = self.image_prediction(
+            image_like[type_mask] += self.get_ml_likelihood(
                 tel_type,
-                np.rad2deg(zenith),
-                azimuth,
-                energy * np.ones_like(impact[type_mask]),
-                impact[type_mask],
-                x_max_bin * np.ones_like(impact[type_mask]),
                 np.rad2deg(pix_x_rot[type_mask]),
                 np.rad2deg(pix_y_rot[type_mask]),
+                x_max_bin,
+                impact[type_mask],
+                energy,
+                self.image[type_mask],
             )
+            # prediction[type_mask] = self.image_prediction(
+            #    tel_type,
+            #    np.rad2deg(zenith),
+            #    azimuth,
+            #    energy * np.ones_like(impact[type_mask]),
+            #    impact[type_mask],
+            #    x_max_bin * np.ones_like(impact[type_mask]),
+            #    np.rad2deg(pix_x_rot[type_mask]),
+            #    np.rad2deg(pix_y_rot[type_mask]),
+            # )
 
             if self.use_time_gradient:
                 tg, tgu = self.predict_time(
@@ -603,28 +611,28 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
                     chi2 += time_like
 
         # Likelihood function will break if we find a NaN or a 0
-        prediction[np.isnan(prediction)] = 1e-8
-        prediction[prediction < 1e-8] = 1e-8
+        # prediction[np.isnan(prediction)] = 1e-8
+        # prediction[prediction < 1e-8] = 1e-8
         # prediction *= self.scale_factor[:, np.newaxis]
 
         # Get likelihood that the prediction matched the camera image
         mask = ma.getmask(self.image)
 
-        like = neg_log_likelihood_approx(self.image, prediction, self.spe, self.ped)
-        like[mask] = 0
+        # like = neg_log_likelihood_approx(self.image, prediction, self.spe, self.ped)
+        image_like[mask] = 0
 
-        if goodness_of_fit:
-            like_expectation_gaus = mean_poisson_likelihood_gaussian(
-                prediction, self.spe, self.ped
-            )
-            like_expectation_gaus[mask] = 0
-            mask_shower = np.invert(mask)
-            goodness = np.sum(like - like_expectation_gaus, axis=-1) / np.sqrt(
-                2 * (np.sum(mask_shower, axis=-1) - 6)
-            )
-            return goodness
+        # if goodness_of_fit:
+        #    like_expectation_gaus = mean_poisson_likelihood_gaussian(
+        #        prediction, self.spe, self.ped
+        #    )
+        #    like_expectation_gaus[mask] = 0
+        #    mask_shower = np.invert(mask)
+        #    goodness = np.sum(like - like_expectation_gaus, axis=-1) / np.sqrt(
+        #        2 * (np.sum(mask_shower, axis=-1) - 6)
+        #    )
+        #    return goodness
 
-        like = np.sum(like)
+        like = np.sum(image_like)
 
         final_sum = like
         if self.use_time_gradient:

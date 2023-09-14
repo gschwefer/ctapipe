@@ -3,15 +3,16 @@
 
 """
 import copy
-import pytest
 from string import Template
 
 import numpy as np
 import numpy.ma as ma
+import pytest
 from astropy import units as u
 from astropy.coordinates import AltAz, SkyCoord
 from iminuit import Minuit
 from scipy.stats import norm
+from tensorflow import keras
 
 from ctapipe.core import traits
 
@@ -42,6 +43,7 @@ from .impact_utilities import (
     EmptyImages,
     create_seed,
     guess_shower_depth,
+    predict_ml,
     rotate_translate,
 )
 from .reconstructor import (
@@ -64,6 +66,15 @@ INVALID_ENERGY = ReconstructedEnergyContainer(
 )
 
 __all__ = ["ImPACTReconstructor"]
+
+
+def custom_symlog(value, linear_threshold=10):
+    return np.where(
+        np.abs(value) < linear_threshold,
+        value,
+        np.sign(value)
+        * (np.emath.logn(2, np.abs(value / linear_threshold)) + linear_threshold),
+    )
 
 
 class ImPACTReconstructor(HillasGeometryReconstructor):
@@ -175,6 +186,10 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
 
         self.min = None
         self.dummy_reconstructor = dummy_reconstructor
+
+        self.ml_model = keras.saving.load_model(
+            "/lfs/l1/cta/gschwefer/impact_machine_learning/freedom/pixel_charge/models/14_MST_gammas_for_impact_test_1-100run_pixel_charge_freedom_ml_training_set_9000000_xpixrot_ypixrot_Xmax_d_E_4_dilation.keras",
+        )
 
     def __call__(self, event):
         """
@@ -617,6 +632,33 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
 
         return final_sum
 
+    def get_ml_likelihood(
+        self, tel_type, rot_pix_x, rot_pix_y, xmax_diff, d_impact, energy, image
+    ):
+        eval_rot_pix_x = rot_pix_x.flatten()
+        eval_rot_pix_y = np.abs(rot_pix_y.flatten())
+        eval_xmax_diff = xmax_diff / 100 * np.ones(len(image[0]) * len(d_impact))
+        eval_d_impact = np.tile(d_impact / 1000, (len(image[0]), 1)).T.flatten()
+        eval_energy = np.log10(energy * np.ones(len(image[0]) * len(d_impact)))
+        eval_image = custom_symlog(image.flatten() / 10, linear_threshold=2)
+
+        eval_points = np.column_stack(
+            (
+                eval_rot_pix_x,
+                eval_rot_pix_y,
+                eval_xmax_diff,
+                eval_d_impact,
+                eval_energy,
+                eval_image,
+            )
+        )
+
+        loglratio = -1 * np.asarray(predict_ml(eval_points, self.ml_model)).reshape(
+            len(d_impact), len(image[0])
+        )
+
+        return loglratio
+
     def get_likelihood_min(self, x):
         """Wrapper class around likelihood function for use with scipy
         minimisers
@@ -1004,7 +1046,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         self.min.strategy = 1
 
         # Fit and output parameters and errors
-        migrad = self.min.migrad(iterate=1)
+        _ = self.min.migrad(iterate=1)
         fit_params = self.min.values
         errors = self.min.errors
 

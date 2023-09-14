@@ -1,8 +1,10 @@
-import numpy as np
-from scipy.stats import norm
 import gzip
 import pickle
+
 import numba
+import numpy as np
+import tensorflow as tf
+from scipy.stats import norm
 
 __all__ = [
     "create_seed",
@@ -16,6 +18,11 @@ __all__ = [
 
 class EmptyImages(Exception):
     pass
+
+
+@tf.function
+def predict_ml(input_data, a_model):
+    return a_model(input_data)
 
 
 def guess_shower_depth(energy):

@@ -184,7 +184,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         self.dummy_reconstructor = dummy_reconstructor
 
         self.ml_model = keras.saving.load_model(
-            "/lfs/l1/cta/gschwefer/impact_machine_learning/freedom/pixel_charge/models/14_MST_gammas_for_impact_test_1-100run_pixel_charge_freedom_ml_training_set_4000000_xpixrot_ypixrot_Xmax_d_E_2_dilation.keras",
+            "/lfs/l1/cta/gschwefer/impact_machine_learning/freedom/pixel_charge/models/1-5run_freedom_ml_training_set_dilate_2_ESLOPE_1__1-100run_freedom_ml_training_set_dilate_2_for_impact_test_10000000_xpixrot_ypixrot_no_abs_Xmax_d_E.keras",
         )
 
     def __call__(self, event):
@@ -237,7 +237,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             # Dilate the images around the original cleaning to help the fit
             mask = dilate(self.subarray.tel[tel_id].camera.geometry, mask)
             mask = dilate(self.subarray.tel[tel_id].camera.geometry, mask)
-            mask = dilate(self.subarray.tel[tel_id].camera.geometry, mask)
+            # mask = dilate(self.subarray.tel[tel_id].camera.geometry, mask)
             mask_dict[tel_id] = mask
 
         reconstructor_geometry_prediction = event.dl2.stereo.geometry
@@ -644,7 +644,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         self, tel_type, rot_pix_x, rot_pix_y, xmax_diff, d_impact, energy, image
     ):
         eval_rot_pix_x = rot_pix_x.flatten()
-        eval_rot_pix_y = np.abs(rot_pix_y.flatten())
+        eval_rot_pix_y = rot_pix_y.flatten()
         eval_xmax_diff = xmax_diff / 100 * np.ones(len(image[0]) * len(d_impact))
         eval_d_impact = np.tile(d_impact / 1000, (len(image[0]), 1)).T.flatten()
         eval_energy = np.log10(energy * np.ones(len(image[0]) * len(d_impact)))

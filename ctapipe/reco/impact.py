@@ -11,7 +11,6 @@ import pytest
 from astropy import units as u
 from astropy.coordinates import AltAz, SkyCoord
 from iminuit import Minuit
-from scipy.stats import norm
 from tensorflow import keras
 
 from ctapipe.core import traits
@@ -25,16 +24,9 @@ from ..coordinates import (
     project_to_ground,
 )
 from ..core import Provenance
-from ..fitting import lts_linear_regression
 from ..image.cleaning import dilate
 from ..instrument import get_atmosphere_profile_functions
 from ..utils.deprecation import CTAPipeDeprecationWarning
-from ..utils.template_network_interpolator import (
-    DummyTemplateInterpolator,
-    DummyTimeInterpolator,
-    TemplateNetworkInterpolator,
-    TimeGradientInterpolator,
-)
 from .impact_utilities import (
     EmptyImages,
     create_seed,
@@ -112,7 +104,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
     ).tag(config=True)
 
     root_dir = traits.Unicode(
-        default_value=".", help="Directory containing ImPACT tables"
+        default_value=".", help="Directory containing ml models"
     ).tag(config=True)
 
     # For likelihood calculation we need the with of the
@@ -145,8 +137,8 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         # self.priors = prior
 
         # String templates for loading ImPACT templates
-        self.amplitude_template = Template("${base}/${camera}.template.gz")
-        self.time_template = Template("${base}/time/${camera}.template.gz")
+        self.model_template = Template("${base}/${camera}.keras")
+        # self.time_template = Template("${base}/time/${camera}.template.gz")
 
         # We also need a conversion function from height above ground to
         # depth of maximum To do this we need the conversion table from CORSIKA
@@ -174,18 +166,14 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         self.peak_x, self.peak_y, self.peak_amp = None, None, None
         self.hillas_parameters, self.ped = None, None
 
-        self.prediction = dict()
-        self.time_prediction = dict()
+        self.models = dict()
+        # self.time_prediction = dict()
 
         self.array_direction = None
         self.nominal_frame = None
 
         self.min = None
         self.dummy_reconstructor = dummy_reconstructor
-
-        self.ml_model = keras.saving.load_model(
-            "/lfs/l1/cta/gschwefer/impact_machine_learning/freedom/pixel_charge/models/1-5run_freedom_ml_training_set_dilate_2_ESLOPE_1__1-100run_freedom_ml_training_set_dilate_2_for_impact_test_10000000_xpixrot_ypixrot_no_abs_Xmax_d_E.keras",
-        )
 
     def __call__(self, event):
         """
@@ -276,7 +264,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
 
         self._store_impact_parameter(event)
 
-    def initialise_templates(self, tel_type):
+    def initialise_models(self, tel_type):
         """Check if templates for a given telescope type has been initialised
         and if not do it and add to the dictionary
 
@@ -292,35 +280,28 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         """
 
         for t in tel_type:
-            if tel_type[t] in self.prediction.keys() or tel_type[t] == "DUMMY":
+            if tel_type[t] in self.models.keys() or tel_type[t] == "DUMMY":
                 continue
-
-            if self.dummy_reconstructor:
-                self.prediction[tel_type[t]] = DummyTemplateInterpolator()
             else:
-                filename = self.amplitude_template.substitute(
-                    base=self.root_dir, camera=tel_type[t]
-                )
-                self.prediction[tel_type[t]] = TemplateNetworkInterpolator(
-                    filename, bounds=((-5, 1), (-1.5, 1.5))
-                )
-                PROV.add_input_file(
-                    filename, role="ImPACT Template file for " + tel_type[t]
-                )
-
-            if self.use_time_gradient:
-                if self.dummy_reconstructor:
-                    self.time_prediction[tel_type[t]] = DummyTimeInterpolator()
-                else:
-                    filename = self.time_template.substitute(
+                self.models[tel_type[t]] = keras.saving.load_model(
+                    self.model_template.substitute(
                         base=self.root_dir, camera=tel_type[t]
                     )
-                    self.time_prediction[tel_type[t]] = TimeGradientInterpolator(
-                        filename
-                    )
-                    PROV.add_input_file(
-                        filename, role="ImPACT Time Template file for " + tel_type[t]
-                    )
+                )
+
+            # if self.use_time_gradient:
+            #    if self.dummy_reconstructor:
+            #        self.time_prediction[tel_type[t]] = DummyTimeInterpolator()
+            #    else:
+            #        filename = self.time_template.substitute(
+            #            base=self.root_dir, camera=tel_type[t]
+            #        )
+            #        self.time_prediction[tel_type[t]] = TimeGradientInterpolator(
+            #            filename
+            #        )
+            #        PROV.add_input_file(
+            #            filename, role="ImPACT Time Template file for " + tel_type[t]
+            #        )
 
         return True
 
@@ -408,58 +389,28 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
 
         return x_max
 
-    def image_prediction(
-        self, tel_type, zenith, azimuth, energy, impact, x_max, pix_x, pix_y
-    ):
-        """Creates predicted image for the specified pixels, interpolated
-        from the template library.
-
-        Parameters
-        ----------
-        tel_type: string
-            Telescope type specifier
-        energy: float
-            Event energy (TeV)
-        impact: float
-            Impact diance of shower (metres)
-        x_max: float
-            Depth of shower maximum (num bins from expectation)
-        pix_x: ndarray
-            X coordinate of pixels
-        pix_y: ndarray
-            Y coordinate of pixels
-
-        Returns
-        -------
-        ndarray: predicted amplitude for all pixels
-
-        """
-        return self.prediction[tel_type](
-            zenith, azimuth, energy, impact, x_max, pix_x, pix_y
-        )
-
-    def predict_time(self, tel_type, zenith, azimuth, energy, impact, x_max):
-        """Creates predicted image for the specified pixels, interpolated
-        from the template library.
-
-        Parameters
-        ----------
-        tel_type: string
-            Telescope type specifier
-        energy: float
-            Event energy (TeV)
-        impact: float
-            Impact diance of shower (metres)
-        x_max: float
-            Depth of shower maximum (num bins from expectation)
-
-        Returns
-        -------
-        ndarray: predicted amplitude for all pixels
-
-        """
-        time = self.time_prediction[tel_type](zenith, azimuth, energy, impact, x_max)
-        return time.T[0], time.T[1]
+    # def predict_time(self, tel_type, zenith, azimuth, energy, impact, x_max):
+    #    """Creates predicted image for the specified pixels, interpolated
+    #    from the template library.
+    #
+    #    Parameters
+    #    ----------
+    #    tel_type: string
+    #        Telescope type specifier
+    #    energy: float
+    #        Event energy (TeV)
+    #    impact: float
+    #        Impact diance of shower (metres)
+    #    x_max: float
+    #        Depth of shower maximum (num bins from expectation)
+    #
+    #    Returns
+    #    -------
+    #    ndarray: predicted amplitude for all pixels
+    #
+    #    """
+    #    time = self.time_prediction[tel_type](zenith, azimuth, energy, impact, x_max)
+    #    return time.T[0], time.T[1]
 
     def get_likelihood(
         self,
@@ -504,7 +455,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         # and ignore them from then on
 
         zenith = self.zenith
-        azimuth = self.azimuth
+        # azimuth = self.azimuth
 
         # Geometrically calculate the depth of maximum given this test position
         x_max = self.get_shower_max(source_x, source_y, core_x, core_y, zenith)
@@ -540,9 +491,9 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         # prediction = ma.zeros(self.image.shape)
         # prediction.mask = ma.getmask(self.image)
 
-        time_gradients, time_gradients_uncertainty = np.zeros(
-            self.image.shape[0]
-        ), np.zeros(self.image.shape[0])
+        # time_gradients, time_gradients_uncertainty = np.zeros(
+        #    self.image.shape[0]
+        # ), np.zeros(self.image.shape[0])
         # Loop over all telescope types and get prediction
 
         image_like = np.zeros(self.image.shape, dtype=np.float64)
@@ -559,56 +510,46 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
                 energy,
                 self.image[type_mask],
             )
-            # prediction[type_mask] = self.image_prediction(
-            #    tel_type,
-            #    np.rad2deg(zenith),
-            #    azimuth,
-            #    energy * np.ones_like(impact[type_mask]),
-            #    impact[type_mask],
-            #    x_max_bin * np.ones_like(impact[type_mask]),
-            #    np.rad2deg(pix_x_rot[type_mask]),
-            #    np.rad2deg(pix_y_rot[type_mask]),
-            # )
 
-            if self.use_time_gradient:
-                tg, tgu = self.predict_time(
-                    tel_type,
-                    np.rad2deg(zenith),
-                    azimuth,
-                    energy * np.ones_like(impact[type_mask]),
-                    impact[type_mask],
-                    x_max_bin * np.ones_like(impact[type_mask]),
-                )
-                time_gradients[type_mask] = tg
-                time_gradients_uncertainty[type_mask] = tgu
+            # if self.use_time_gradient:
+            #    tg, tgu = self.predict_time(
+            #        tel_type,
+            #        np.rad2deg(zenith),
+            #        azimuth,
+            #        energy * np.ones_like(impact[type_mask]),
+            #        impact[type_mask],
+            #        x_max_bin * np.ones_like(impact[type_mask]),
+            #    )
+            #    time_gradients[type_mask] = tg
+            #    time_gradients_uncertainty[type_mask] = tgu
 
-        if self.use_time_gradient:
-            time_gradients_uncertainty[time_gradients_uncertainty == 0] = 1e-6
-
-            chi2 = 0
-            for telescope_index in range(self.time.shape[0]):
-                time_mask = np.logical_and(
-                    np.invert(ma.getmask(self.image[telescope_index])),
-                    self.time[telescope_index] > 0,
-                )
-                time_mask = np.logical_and(
-                    time_mask, np.isfinite(self.time[telescope_index])
-                )
-                time_mask = np.logical_and(time_mask, self.image[telescope_index] > 5)
-                if np.sum(time_mask) > 3:
-                    time_slope = lts_linear_regression(
-                        x=np.rad2deg(pix_x_rot[telescope_index][time_mask]),
-                        y=self.time[telescope_index][time_mask],
-                        samples=3,
-                    )[0][0]
-
-                    time_like = -2 * norm.logpdf(
-                        np.abs(time_slope),
-                        loc=time_gradients[telescope_index],
-                        scale=time_gradients_uncertainty[telescope_index],
-                    )
-
-                    chi2 += time_like
+        # if self.use_time_gradient:
+        #    time_gradients_uncertainty[time_gradients_uncertainty == 0] = 1e-6
+        #
+        #    chi2 = 0
+        #    for telescope_index in range(self.time.shape[0]):
+        #        time_mask = np.logical_and(
+        #            np.invert(ma.getmask(self.image[telescope_index])),
+        #            self.time[telescope_index] > 0,
+        #        )
+        #        time_mask = np.logical_and(
+        #            time_mask, np.isfinite(self.time[telescope_index])
+        #        )
+        #        time_mask = np.logical_and(time_mask, self.image[telescope_index] > 5)
+        #        if np.sum(time_mask) > 3:
+        #            time_slope = lts_linear_regression(
+        #                x=np.rad2deg(pix_x_rot[telescope_index][time_mask]),
+        #                y=self.time[telescope_index][time_mask],
+        #                samples=3,
+        #            )[0][0]
+        #
+        #            time_like = -2 * norm.logpdf(
+        #                np.abs(time_slope),
+        #                loc=time_gradients[telescope_index],
+        #                scale=time_gradients_uncertainty[telescope_index],
+        #            )
+        #
+        #            chi2 += time_like
 
         # Likelihood function will break if we find a NaN or a 0
         # prediction[np.isnan(prediction)] = 1e-8
@@ -635,8 +576,8 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         like = np.sum(image_like)
 
         final_sum = like
-        if self.use_time_gradient:
-            final_sum += chi2
+        # if self.use_time_gradient:
+        #    final_sum += chi2
 
         return final_sum
 
@@ -661,9 +602,9 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             )
         )
 
-        loglratio = -1 * np.asarray(predict_ml(eval_points, self.ml_model)).reshape(
-            len(d_impact), len(image[0])
-        )
+        loglratio = -1 * np.asarray(
+            predict_ml(eval_points, self.models[tel_type])
+        ).reshape(len(d_impact), len(image[0]))
 
         return loglratio
 
@@ -825,7 +766,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
 
         # Finally run some functions to get ready for the event
         self.get_hillas_mean()
-        self.initialise_templates(type_tel)
+        self.initialise_models(type_tel)
 
     def predict(
         self,
@@ -865,8 +806,6 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             array_pointing,
             telescope_pointings,
         )
-
-        self.reset_interpolator()
 
         like_min = 1e9
         fit_params = None
@@ -1077,14 +1016,3 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             ),
             self.min.fval,
         )
-
-    def reset_interpolator(self):
-        """
-        This function is needed in order to reset some variables in the interpolator
-        at each new event. Without this reset, a new event starts with information
-        from the previous event.
-        """
-        for key in self.prediction:
-            self.prediction[key].reset()
-        for key in self.time_prediction:
-            self.time_prediction[key].reset()

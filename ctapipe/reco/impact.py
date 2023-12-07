@@ -28,7 +28,7 @@ from ..fitting import lts_linear_regression
 from ..image.cleaning import dilate
 from ..image.pixel_likelihood import (
     mean_poisson_likelihood_gaussian,
-    neg_log_likelihood_approx,
+    neg_log_likelihood,
 )
 from ..instrument import get_atmosphere_profile_functions
 from ..utils.deprecation import CTAPipeDeprecationWarning
@@ -601,7 +601,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         # Get likelihood that the prediction matched the camera image
         mask = ma.getmask(self.image)
 
-        like = neg_log_likelihood_approx(self.image, prediction, self.spe, self.ped)
+        like = neg_log_likelihood(self.image, prediction, self.spe, self.ped)
         like[mask] = 0
 
         if goodness_of_fit:

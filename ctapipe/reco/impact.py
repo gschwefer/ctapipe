@@ -3,6 +3,7 @@
 
 """
 import copy
+import pickle
 import warnings
 from string import Template
 
@@ -861,7 +862,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
                 )
 
                 # Perform maximum likelihood fit
-                fit_params_min, errors, like = self.minimise(
+                fit_params_min, errors, like, _ = self.minimise(
                     params=seed,
                     step=step,
                     limits=limits,
@@ -879,11 +880,17 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             fit_params[0], fit_params[1], fit_params[2], fit_params[3], fit_params[4]
         )
 
-        fit_params, errors, like = self.minimise(
+        fit_params, errors, like, min_object = self.minimise(
             params=seed[0],
             step=seed[1],
             limits=seed[2],
         )
+
+        with open(
+            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_2_default.pkl",
+            "wb",
+        ) as outfile:
+            pickle.dump(min_object, outfile)
 
         if np.allclose(fit_params[0], limits[0][0], atol=0.05 / 57.3) or np.allclose(
             fit_params[0], limits[0][1], atol=0.05 / 57.3
@@ -1059,6 +1066,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
                 errors["x_max_scale"],
             ),
             minimizer.fval,
+            minimizer,
         )
 
     def reset_interpolator(self):

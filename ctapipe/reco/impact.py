@@ -886,11 +886,45 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             limits=seed[2],
         )
 
+        # source_cl_68 = min_object.mncontour("source_x", "source_y", cl=0.68, size=200)
+
+        # source_cl_95 = min_object.mncontour("source_x", "source_y", cl=0.95, size=200)
+
+        EX_cl_68 = min_object.mncontour("energy", "x_max_scale", cl=0.68, size=200)
+
+        EX_cl_95 = min_object.mncontour("energy", "x_max_scale", cl=0.95, size=200)
+
+        E_profile = min_object.mnprofile("energy", bound=3, subtract_min=True)
+
+        # with open(
+        #    "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_8_source_cl_68_default.pkl",
+        #    "wb",
+        # ) as outfile:
+        #    pickle.dump(source_cl_68, outfile)
+
         with open(
-            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_2_default.pkl",
+            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_8_EX_cl_68_default.pkl",
             "wb",
         ) as outfile:
-            pickle.dump(min_object, outfile)
+            pickle.dump(EX_cl_68, outfile)
+
+        # with open(
+        #    "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_8_source_cl_95_default.pkl",
+        #    "wb",
+        # ) as outfile:
+        #    pickle.dump(source_cl_95, outfile)
+
+        with open(
+            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_8_EX_cl_95_default.pkl",
+            "wb",
+        ) as outfile:
+            pickle.dump(EX_cl_95, outfile)
+
+        with open(
+            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_8_E_profile_default.pkl",
+            "wb",
+        ) as outfile:
+            pickle.dump(E_profile, outfile)
 
         if np.allclose(fit_params[0], limits[0][0], atol=0.05 / 57.3) or np.allclose(
             fit_params[0], limits[0][1], atol=0.05 / 57.3

@@ -67,7 +67,8 @@ INVALID_ENERGY = ReconstructedEnergyContainer(
 # These are settings for the iminuit minimizer
 MINUIT_ERRORDEF = 0.5  # 0.5 for a log-likelihood cost function for correct errors
 MINUIT_STRATEGY = 1  # Default minimization strategy, 2 is careful, 0 is fast
-MINUIT_TOLERANCE_FACTOR = 1000  # Tolerance for convergence according to EDM criterion
+MINUIT_TOLERANCE_FACTOR = 1e15  # Tolerance for convergence according to EDM criterion
+
 MIGRAD_ITERATE = 1  # Do not call migrad again if convergence was not reached
 __all__ = ["ImPACTReconstructor"]
 
@@ -886,9 +887,9 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             limits=seed[2],
         )
 
-        # source_cl_68 = min_object.mncontour("source_x", "source_y", cl=0.68, size=200)
+        source_cl_68 = min_object.mncontour("source_x", "source_y", cl=0.68, size=200)
 
-        # source_cl_95 = min_object.mncontour("source_x", "source_y", cl=0.95, size=200)
+        source_cl_95 = min_object.mncontour("source_x", "source_y", cl=0.95, size=200)
 
         EX_cl_68 = min_object.mncontour("energy", "x_max_scale", cl=0.68, size=200)
 
@@ -896,32 +897,32 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
 
         E_profile = min_object.mnprofile("energy", bound=3, subtract_min=True)
 
-        # with open(
-        #    "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_8_source_cl_68_default.pkl",
-        #    "wb",
-        # ) as outfile:
-        #    pickle.dump(source_cl_68, outfile)
+        with open(
+            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_4524401_source_cl_68_default.pkl",
+            "wb",
+        ) as outfile:
+            pickle.dump(source_cl_68, outfile)
 
         with open(
-            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_8_EX_cl_68_default.pkl",
+            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_4524401_EX_cl_68_default.pkl",
             "wb",
         ) as outfile:
             pickle.dump(EX_cl_68, outfile)
 
-        # with open(
-        #    "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_8_source_cl_95_default.pkl",
-        #    "wb",
-        # ) as outfile:
-        #    pickle.dump(source_cl_95, outfile)
+        with open(
+            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_4524401_source_cl_95_default.pkl",
+            "wb",
+        ) as outfile:
+            pickle.dump(source_cl_95, outfile)
 
         with open(
-            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_8_EX_cl_95_default.pkl",
+            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_4524401_EX_cl_95_default.pkl",
             "wb",
         ) as outfile:
             pickle.dump(EX_cl_95, outfile)
 
         with open(
-            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_8_E_profile_default.pkl",
+            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_4524401_E_profile_default.pkl",
             "wb",
         ) as outfile:
             pickle.dump(E_profile, outfile)

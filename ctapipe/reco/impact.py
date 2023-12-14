@@ -3,6 +3,7 @@
 
 """
 import copy
+import itertools
 import pickle
 import warnings
 from string import Template
@@ -67,7 +68,7 @@ INVALID_ENERGY = ReconstructedEnergyContainer(
 # These are settings for the iminuit minimizer
 MINUIT_ERRORDEF = 0.5  # 0.5 for a log-likelihood cost function for correct errors
 MINUIT_STRATEGY = 1  # Default minimization strategy, 2 is careful, 0 is fast
-MINUIT_TOLERANCE_FACTOR = 1e15  # Tolerance for convergence according to EDM criterion
+MINUIT_TOLERANCE_FACTOR = 1000  # Tolerance for convergence according to EDM criterion
 
 MIGRAD_ITERATE = 1  # Do not call migrad again if convergence was not reached
 __all__ = ["ImPACTReconstructor"]
@@ -209,6 +210,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             frame=AltAz(),
         )
 
+        self.event_id = event.index["event_id"]
         # And the pointing direction of the telescopes may not be the same
         telescope_pointings = self._get_telescope_pointings(event)
 
@@ -887,45 +889,58 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             limits=seed[2],
         )
 
-        source_cl_68 = min_object.mncontour("source_x", "source_y", cl=0.68, size=200)
+        min_object.fixed = [True, True, False, False, False, False, True]
 
-        source_cl_95 = min_object.mncontour("source_x", "source_y", cl=0.95, size=200)
+        _ = min_object.migrad(iterate=MIGRAD_ITERATE)
 
-        EX_cl_68 = min_object.mncontour("energy", "x_max_scale", cl=0.68, size=200)
+        # for k in range(30):
+        #
 
-        EX_cl_95 = min_object.mncontour("energy", "x_max_scale", cl=0.95, size=200)
+        #    min_object.fixed = [True, True, False, False, False, False, True]
 
-        E_profile = min_object.mnprofile("energy", bound=3, subtract_min=True)
+        #    _=min_object.migrad(iterate=MIGRAD_ITERATE)
+
+        #    min_object.fixed = [False, False, False, False, True, True, True]
+
+        #    _=min_object.migrad(iterate=MIGRAD_ITERATE)
+
+        #    min_object.fixed = [False, False, False, False, False, False, True]
+
+        #    _=min_object.migrad(iterate=MIGRAD_ITERATE)
+
+        n_grid_points = 120
+
+        grid_vec_source_x = np.linspace(
+            fit_params[0] - np.deg2rad(0.2),
+            fit_params[0] + np.deg2rad(0.2),
+            n_grid_points,
+        )
+        grid_vec_source_y = np.linspace(
+            fit_params[1] - np.deg2rad(0.2),
+            fit_params[1] + np.deg2rad(0.2),
+            n_grid_points,
+        )
+
+        source_grid = np.asarray(np.meshgrid(grid_vec_source_x, grid_vec_source_y)).T
+
+        like_grid = np.zeros((n_grid_points, n_grid_points))
+
+        for i, j in itertools.product(
+            np.arange(n_grid_points), np.arange(n_grid_points)
+        ):
+
+            min_object.values[0] = source_grid[i, j, 0]
+            min_object.values[1] = source_grid[i, j, 1]
+            _ = min_object.migrad(iterate=MIGRAD_ITERATE)
+            like_grid[i, j] = min_object.fval - like
 
         with open(
-            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_4524401_source_cl_68_default.pkl",
+            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_{}_like_grid_{}_{}_tol_1000_02_width.pkl".format(
+                self.event_id, n_grid_points, n_grid_points
+            ),
             "wb",
         ) as outfile:
-            pickle.dump(source_cl_68, outfile)
-
-        with open(
-            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_4524401_EX_cl_68_default.pkl",
-            "wb",
-        ) as outfile:
-            pickle.dump(EX_cl_68, outfile)
-
-        with open(
-            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_4524401_source_cl_95_default.pkl",
-            "wb",
-        ) as outfile:
-            pickle.dump(source_cl_95, outfile)
-
-        with open(
-            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_4524401_EX_cl_95_default.pkl",
-            "wb",
-        ) as outfile:
-            pickle.dump(EX_cl_95, outfile)
-
-        with open(
-            "/lfs/l1/cta/gschwefer/misc/impact_minuit_object/Poster_event_4524401_E_profile_default.pkl",
-            "wb",
-        ) as outfile:
-            pickle.dump(E_profile, outfile)
+            pickle.dump(like_grid, outfile)
 
         if np.allclose(fit_params[0], limits[0][0], atol=0.05 / 57.3) or np.allclose(
             fit_params[0], limits[0][1], atol=0.05 / 57.3

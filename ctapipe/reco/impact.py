@@ -66,7 +66,7 @@ INVALID_ENERGY = ReconstructedEnergyContainer(
 # These are settings for the iminuit minimizer
 MINUIT_ERRORDEF = 0.5  # 0.5 for a log-likelihood cost function for correct errors
 MINUIT_STRATEGY = 1  # Default minimization strategy, 2 is careful, 0 is fast
-MINUIT_TOLERANCE_FACTOR = 1000  # Tolerance for convergence according to EDM criterion
+MINUIT_TOLERANCE_FACTOR = 10  # Tolerance for convergence according to EDM criterion
 MIGRAD_ITERATE = 1  # Do not call migrad again if convergence was not reached
 __all__ = ["ImPACTReconstructor"]
 

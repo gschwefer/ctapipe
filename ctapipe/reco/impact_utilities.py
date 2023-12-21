@@ -81,7 +81,7 @@ def rotate_translate(pixel_pos_x, pixel_pos_y, x_trans, y_trans, phi):
     return pixel_pos_trans_x, pixel_pos_trans_y
 
 
-def create_seed(source_x, source_y, tilt_x, tilt_y, energy):
+def create_seed(source_x, source_y, tilt_x, tilt_y, energy, xmax=None):
     """
     Function for creating seed, step and limits for a given position
 
@@ -110,10 +110,13 @@ def create_seed(source_x, source_y, tilt_x, tilt_y, energy):
     if lower_en_limit < 0.02:
         lower_en_limit = 0.02
 
+    if xmax is None:
+        xmax = 1
+
     # Take the seed from Hillas-based reconstruction
-    seed = [source_x, source_y, tilt_x, tilt_y, en_seed, 1.0]
-    if energy > 2:
-        seed = [source_x, source_y, tilt_x, tilt_y, en_seed, 1.2]
+    seed = [source_x, source_y, tilt_x, tilt_y, en_seed, xmax]
+    # if energy > 2:
+    #    seed = [source_x, source_y, tilt_x, tilt_y, en_seed, 1.2]
 
     # Take a reasonable first guess at step size
     step = [0.04 / 57.3, 0.04 / 57.3, 10, 10, en_seed * 0.05, 0.05, 0.01]
@@ -124,7 +127,7 @@ def create_seed(source_x, source_y, tilt_x, tilt_y, energy):
         [tilt_x - 100, tilt_x + 100],
         [tilt_y - 100, tilt_y + 100],
         [lower_en_limit, en_seed * 2],
-        [0.8, 1.2],
+        [min(0.7, xmax - 0.2), max(1.3, xmax + 0.2)],
         [0.0, 0.01],
     ]
 

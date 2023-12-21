@@ -876,7 +876,12 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
 
         # Now do full minimisation
         seed = create_seed(
-            fit_params[0], fit_params[1], fit_params[2], fit_params[3], fit_params[4]
+            fit_params[0],
+            fit_params[1],
+            fit_params[2],
+            fit_params[3],
+            fit_params[4],
+            xmax=fit_params[5],
         )
 
         fit_params, errors, like = self.minimise(
@@ -1013,7 +1018,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         limits = np.asarray(limits)
 
         energy = params[4]
-        xmax_scale = 1
+        xmax_scale = params[5]
 
         # Now do the minimisation proper
         minimizer = Minuit(

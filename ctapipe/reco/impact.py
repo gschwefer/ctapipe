@@ -1042,6 +1042,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         minimizer.strategy = MINUIT_STRATEGY
 
         # Fit and output parameters and errors
+        _ = minimizer.simplex()
         _ = minimizer.migrad(iterate=MIGRAD_ITERATE)
         fit_params = minimizer.values
         errors = minimizer.errors

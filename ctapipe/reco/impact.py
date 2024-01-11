@@ -127,7 +127,10 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         "dummy": 0.01,
         "UNKNOWN-960PX": 1.0,
     }
-    spe = 0.6  # Also hard code single p.e. distribution width
+    spe_table = {
+        "FlashCam": 0.5,
+        "SST-Camera": 0.5,
+    }  # Also hard code single p.e. distribution width
 
     property = ReconstructionProperty.ENERGY | ReconstructionProperty.GEOMETRY
 
@@ -172,7 +175,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
 
         # And the peak of the images
         self.peak_x, self.peak_y, self.peak_amp = None, None, None
-        self.hillas_parameters, self.ped = None, None
+        self.hillas_parameters, self.ped, self.spe = None, None, None
 
         self.prediction = dict()
         self.time_prediction = dict()
@@ -687,6 +690,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         # self.scale_factor = np.zeros(len(hillas_dict))
 
         self.ped = np.zeros(len(hillas_dict))
+        self.spe = np.zeros(len(hillas_dict))
         self.tel_types, self.tel_id = list(), list()
 
         max_pix_x = 0
@@ -739,6 +743,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             pt.append(time_dict[tel_id][mask])
 
             self.ped[i] = self.ped_table[type]
+            self.spe[i] = self.spe_table[type]
             self.tel_types.append(type)
             self.tel_id.append(tel_id)
 
@@ -771,7 +776,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             self.image[i][:array_len] = pa[i]
             self.time[i][:array_len] = pt[i]
             self.ped[i][:] = self.ped_table[self.tel_types[i]]
-            self.spe[i][:] = 0.5
+            self.spe[i][:] = self.spe_table[self.tel_types[i]]
 
         # Set the image mask
         mask = self.image == 0.0

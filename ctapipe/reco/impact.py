@@ -120,8 +120,8 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
     ped_table = {
         "LSTCam": 1.4,
         "NectarCam": 1.3,
-        "FlashCam": 1.3,
-        "SST-Camera": 0.5,
+        "FlashCam": 1.6,
+        "SST-Camera": 0.8,
         "CHEC": 0.5,
         "ASTRICam": 0.5,
         "dummy": 0.01,

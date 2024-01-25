@@ -129,7 +129,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
     }
     spe_table = {
         "FlashCam": 0.5,
-        "SST-Camera": 0.5,
+        "SST-Camera": 0.2,
     }  # Also hard code single p.e. distribution width
 
     property = ReconstructionProperty.ENERGY | ReconstructionProperty.GEOMETRY

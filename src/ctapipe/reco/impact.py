@@ -8,7 +8,7 @@ import numpy as np
 import numpy.ma as ma
 from astropy import units as u
 from astropy.coordinates import AltAz, SkyCoord
-from scipy.stats import norm
+from tensorflow import keras
 
 from ctapipe.core import traits
 from ctapipe.core.telescope_component import TelescopeParameter
@@ -26,18 +26,11 @@ from ..coordinates import (
 from ..core import Provenance
 from ..fitting import lts_linear_regression
 from ..image.cleaning import dilate
-from ..image.pixel_likelihood import (
-    mean_poisson_likelihood_gaussian,
-    neg_log_likelihood_approx,
-)
-from ..utils.template_network_interpolator import (
-    TemplateNetworkInterpolator,
-    TimeGradientInterpolator,
-)
 from .impact_utilities import (
     EmptyImages,
     create_seed,
     guess_shower_depth,
+    predict_ml,
     rotate_translate,
 )
 from .reconstructor import (
@@ -90,6 +83,16 @@ BACKUP_SPE_TABLE = {
     "UNKNOWN-960PX": 0.6,
 }
 
+
+def custom_symlog(value, linear_threshold=10):
+    return np.where(
+        np.abs(value) < linear_threshold,
+        value,
+        np.sign(value)
+        * (np.emath.logn(2, np.abs(value / linear_threshold)) + linear_threshold),
+    )
+
+
 __all__ = ["ImPACTReconstructor"]
 
 
@@ -125,23 +128,19 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
 
     """
 
-    image_template_path = TelescopeParameter(
+    image_model_path = TelescopeParameter(
         trait=traits.Path(exists=True, directory_ok=False, allow_none=False),
         allow_none=False,
         help=("Path to the image templates to be used in the reconstruction"),
     ).tag(config=True)
 
     # The time gradient templates are optional, so None is allowed here
-    time_gradient_template_path = TelescopeParameter(
+    time_gradient_model_path = TelescopeParameter(
         trait=traits.Path(exists=True, directory_ok=False, allow_none=True),
         allow_none=True,
         default_value=None,
         help=("Path to the time gradient templates to be used in the reconstruction"),
     ).tag(config=True)
-
-    # The SPE and pedestal width parameters are also configurable as TelescopeParameters.
-    # None is allowed and the default value. In that case, either values from the event monitoring data are used
-    # or if that is also not available, a value from a hardcoded backup dict is used.
 
     pedestal_width = traits.FloatTelescopeParameter(
         allow_none=True,
@@ -309,54 +308,37 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         self.use_time_gradient = True
 
         for tel_id in self.subarray.tel_ids:
-            if self.image_template_path.tel[tel_id] not in template_sort_dict.keys():
-                template_sort_dict[self.image_template_path.tel[tel_id]] = [tel_id]
+            if self.image_model_path.tel[tel_id] not in template_sort_dict.keys():
+                template_sort_dict[self.image_model_path.tel[tel_id]] = [tel_id]
             else:
-                template_sort_dict[self.image_template_path.tel[tel_id]].append(tel_id)
+                template_sort_dict[self.image_model_path.tel[tel_id]].append(tel_id)
 
-            if self.time_gradient_template_path.tel[tel_id] is not None:
+            if self.time_gradient_model_path.tel[tel_id] is not None:
                 if (
-                    self.time_gradient_template_path.tel[tel_id]
+                    self.time_gradient_model_path.tel[tel_id]
                     not in time_template_sort_dict.keys()
                 ):
                     time_template_sort_dict[
-                        self.time_gradient_template_path.tel[tel_id]
+                        self.time_gradient_model_path.tel[tel_id]
                     ] = [tel_id]
                 else:
                     time_template_sort_dict[
-                        self.time_gradient_template_path.tel[tel_id]
+                        self.time_gradient_model_path.tel[tel_id]
                     ].append(tel_id)
 
             else:
                 self.use_time_gradient = False
 
         for template_path, tel_ids in template_sort_dict.items():
-            net_interpolator = TemplateNetworkInterpolator(
-                template_path, bounds=((-5, 1), (-1.5, 1.5))
-            )
+            neural_net = keras.saving.load_model(template_path)
 
-            interp_tel_string = net_interpolator.tel_type_string
-            for id in tel_ids:
-                if interp_tel_string != str(self.subarray.tel[id]):
-                    raise ValueError(
-                        "You are using templates that are not intended for this telescope type"
-                    )
-
-            self.prediction[tuple(tel_ids)] = net_interpolator
+            self.prediction[tuple(tel_ids)] = neural_net
 
         if self.use_time_gradient:
             for template_path, tel_ids in time_template_sort_dict.items():
-                time_interpolator = TimeGradientInterpolator(template_path)
+                time_neural_net = keras.saving.load_model(template_path)
 
-                interp_tel_string = time_interpolator.tel_type_string
-
-                for id in tel_ids:
-                    if interp_tel_string != str(self.subarray.tel[id]):
-                        raise ValueError(
-                            "You are using templates that are not intended for this telescope type"
-                        )
-
-                self.time_prediction[tuple(tel_ids)] = time_interpolator
+                self.time_prediction[tuple(tel_ids)] = time_neural_net
 
     def get_hillas_mean(self):
         """This is a simple function to find the peak position of each image
@@ -490,7 +472,7 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         # and ignore them from then on
 
         zenith = self.zenith
-        azimuth = self.azimuth
+        # azimuth = self.azimuth
 
         # Geometrically calculate the depth of maximum given this test position
         x_max_guess = self.get_shower_max(source_x, source_y, core_x, core_y, zenith)
@@ -526,98 +508,99 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
 
         # In the interpolator class we can gain speed advantages by using masked arrays
         # so we need to make sure here everything is masked
-        prediction = ma.zeros(self.image.shape)
-        prediction.mask = ma.getmask(self.image)
+        image_like = ma.zeros(self.image.shape)
+        image_like.mask = ma.getmask(self.image)
 
-        time_gradients, time_gradients_uncertainty = (
-            np.zeros(self.image.shape[0]),
-            np.zeros(self.image.shape[0]),
-        )
         # Loop over all telescope types and get prediction
 
         for tel_ids, template in self.prediction.items():
             template_mask = self.template_masks[tel_ids]
             if np.any(template_mask):
-                prediction[template_mask] = template(
-                    np.rad2deg(zenith),
-                    azimuth,
-                    energy * np.ones_like(impact[template_mask]),
-                    impact[template_mask],
-                    x_max_diff * np.ones_like(impact[template_mask]),
-                    np.rad2deg(pix_x_rot[template_mask]),
-                    np.rad2deg(pix_y_rot[template_mask]),
+                eval_rot_pix_x = np.rad2deg(pix_x_rot[template_mask].flatten())
+                eval_rot_pix_y = np.rad2deg(pix_y_rot[template_mask].flatten())
+                eval_xmax_diff = (
+                    x_max_diff
+                    / 100
+                    * np.ones(len(self.image[0]) * len(impact[template_mask]))
+                )
+                eval_d_impact = np.tile(
+                    impact[template_mask] / 1000, (len(self.image[0]), 1)
+                ).T.flatten()
+                eval_energy = np.log10(
+                    energy * np.ones(len(self.image[0]) * len(impact[template_mask]))
+                )
+                eval_image = custom_symlog(
+                    self.image[template_mask].flatten() / 10, linear_threshold=2
                 )
 
+                eval_points = np.column_stack(
+                    (
+                        eval_rot_pix_x,
+                        eval_rot_pix_y,
+                        eval_xmax_diff,
+                        eval_d_impact,
+                        eval_energy,
+                        eval_image,
+                    )
+                )
+
+                image_like[template_mask] = -1 * np.asarray(
+                    predict_ml(eval_points, template)
+                ).reshape(len(impact[template_mask]), len(self.image[0]))
+
         if self.use_time_gradient:
+            like_time = 0
             for tel_ids, time_template in self.time_prediction.items():
                 time_template_mask = self.time_template_masks[tel_ids]
                 if np.any(time_template_mask):
-                    time_pred = time_template(
-                        np.rad2deg(zenith),
-                        azimuth,
-                        energy * np.ones_like(impact[time_template_mask]),
-                        impact[time_template_mask],
-                        x_max_diff * np.ones_like(impact[time_template_mask]),
-                    )
+                    for telescope_index, image, time in zip(
+                        tel_ids,
+                        self.image[time_template_mask],
+                        self.time[time_template_mask],
+                    ):
+                        time_mask = np.logical_and(
+                            np.invert(ma.getmask(image)),
+                            time > 0,
+                        )
+                        time_mask = np.logical_and(time_mask, np.isfinite(time))
+                        time_mask = np.logical_and(time_mask, image > 5)
+                        if np.sum(time_mask) > 3:
+                            eval_time_slope = lts_linear_regression(
+                                x=np.rad2deg(pix_x_rot[telescope_index][time_mask]),
+                                y=time[time_mask],
+                                samples=3,
+                            )[0][0]
 
-                    time_gradients[time_template_mask] = time_pred.T[0]
-                    time_gradients_uncertainty[time_template_mask] = time_pred.T[1]
+                            eval_xmax_diff = x_max_diff / 100
+                            eval_d_impact = impact[telescope_index]
+                            eval_energy = np.log10(energy)
 
-            time_gradients_uncertainty[time_gradients_uncertainty == 0] = 1e-6
-
-            chi2 = 0
-            for telescope_index, (image, time) in enumerate(zip(self.image, self.time)):
-                time_mask = np.logical_and(
-                    np.invert(ma.getmask(image)),
-                    time > 0,
-                )
-                time_mask = np.logical_and(time_mask, np.isfinite(time))
-                time_mask = np.logical_and(time_mask, image > 5)
-                if (
-                    np.sum(time_mask) > 3
-                    and time_gradients_uncertainty[telescope_index] > 0
-                ):
-                    time_slope = lts_linear_regression(
-                        x=np.rad2deg(pix_x_rot[telescope_index][time_mask]),
-                        y=time[time_mask],
-                        samples=3,
-                    )[0][0]
-
-                    time_like = -1 * norm.logpdf(
-                        time_slope,
-                        loc=time_gradients[telescope_index],
-                        scale=time_gradients_uncertainty[telescope_index],
-                    )
-
-                    chi2 += time_like
+                            like_time += -1 * predict_ml(
+                                [
+                                    eval_xmax_diff,
+                                    eval_d_impact,
+                                    eval_energy,
+                                    eval_time_slope,
+                                ],
+                                time_template,
+                            )
 
         # Likelihood function will break if we find a NaN or a 0
-        prediction[np.isnan(prediction)] = 1e-8
-        prediction[prediction < 1e-8] = 1e-8
-        # prediction *= self.scale_factor[:, np.newaxis]
+        image_like[np.isnan(image_like)] = 0
 
         # Get likelihood that the prediction matched the camera image
         mask = ma.getmask(self.image)
 
-        like = neg_log_likelihood_approx(self.image, prediction, self.spe, self.ped)
-        like[mask] = 0
+        image_like[mask] = 0
 
         if goodness_of_fit:
-            like_expectation_gaus = mean_poisson_likelihood_gaussian(
-                prediction, self.spe, self.ped
-            )
-            like_expectation_gaus[mask] = 0
-            mask_shower = np.invert(mask)
-            goodness = np.sum(2 * like - like_expectation_gaus, axis=-1) / np.sqrt(
-                2 * (np.sum(mask_shower, axis=-1) - 6)
-            )
-            return goodness
+            return np.sum(image_like)
 
-        like = np.sum(like)
+        like = np.sum(image_like)
 
         final_sum = like
         if self.use_time_gradient:
-            final_sum += chi2
+            final_sum += like_time
 
         return final_sum
 

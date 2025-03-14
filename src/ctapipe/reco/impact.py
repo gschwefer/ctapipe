@@ -798,8 +798,6 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             telescope_pointings,
         )
 
-        self.reset_interpolator()
-
         like_min = 1e9
         fit_params = None
 
@@ -1015,14 +1013,3 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             ),
             minimizer.fval,
         )
-
-    def reset_interpolator(self):
-        """
-        This function is needed in order to reset some variables in the interpolator
-        at each new event. Without this reset, a new event starts with information
-        from the previous event.
-        """
-        for key in self.prediction:
-            self.prediction[key].reset()
-        for key in self.time_prediction:
-            self.time_prediction[key].reset()

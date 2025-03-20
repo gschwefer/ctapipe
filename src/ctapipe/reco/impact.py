@@ -859,6 +859,32 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             limits=seed[2],
         )
 
+        if np.allclose(fit_params[0], limits[0][0], atol=0.05 / 57.3) or np.allclose(
+            fit_params[0], limits[0][1], atol=0.05 / 57.3
+        ):
+            return INVALID_GEOMETRY, INVALID_ENERGY
+
+        if np.allclose(fit_params[1], limits[1][0], atol=0.05 / 57.3) or np.allclose(
+            fit_params[1], limits[1][1], atol=0.05 / 57.3
+        ):
+            return INVALID_GEOMETRY, INVALID_ENERGY
+
+        if np.allclose(fit_params[2], limits[2][0], atol=5) or np.allclose(
+            fit_params[2], limits[2][1], atol=5
+        ):
+            return INVALID_GEOMETRY, INVALID_ENERGY
+
+        if np.allclose(fit_params[3], limits[3][0], atol=5) or np.allclose(
+            fit_params[3], limits[3][1], atol=5
+        ):
+            return INVALID_GEOMETRY, INVALID_ENERGY
+
+        if fit_params[4] < 1.05 * limits[4][0] or fit_params[4] > 0.95 * limits[4][1]:
+            return INVALID_GEOMETRY, INVALID_ENERGY
+
+        if np.abs(fit_params[1] * u.rad) > np.deg2rad(90) * u.rad:
+            return INVALID_GEOMETRY, INVALID_ENERGY
+
         # Create a container class for reconstructed shower
 
         # Convert the best fits direction and core to Horizon and ground systems and

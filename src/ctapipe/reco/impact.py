@@ -466,6 +466,9 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
         if np.isnan(source_x) or np.isnan(source_y):
             return 1e8
 
+        if np.isnan(core_x) or np.isnan(core_y):
+            return 1e8
+
         # First we add units back onto everything.  Currently not
         # handled very well, maybe in future we could just put
         # everything in the correct units when loading in the class
@@ -553,10 +556,11 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
             for tel_ids, time_template in self.time_prediction.items():
                 time_template_mask = self.time_template_masks[tel_ids]
                 if np.any(time_template_mask):
-                    for telescope_index, image, time in zip(
-                        tel_ids,
+                    for image, time, pix_x_coord, d_impact in zip(
                         self.image[time_template_mask],
                         self.time[time_template_mask],
+                        np.rad2deg(pix_x_rot[time_template_mask]),
+                        impact[time_template_mask],
                     ):
                         time_mask = np.logical_and(
                             np.invert(ma.getmask(image)),
@@ -564,24 +568,27 @@ class ImPACTReconstructor(HillasGeometryReconstructor):
                         )
                         time_mask = np.logical_and(time_mask, np.isfinite(time))
                         time_mask = np.logical_and(time_mask, image > 5)
+                        time_mask = np.logical_and(time_mask, np.isfinite(pix_x_coord))
                         if np.sum(time_mask) > 3:
                             eval_time_slope = lts_linear_regression(
-                                x=np.rad2deg(pix_x_rot[telescope_index][time_mask]),
-                                y=time[time_mask],
+                                x=pix_x_coord[time_mask].data,
+                                y=time[time_mask].data,
                                 samples=3,
                             )[0][0]
 
                             eval_xmax_diff = x_max_diff / 100
-                            eval_d_impact = impact[telescope_index]
+                            eval_d_impact = d_impact / 1000
                             eval_energy = np.log10(energy)
 
                             like_time += -1 * predict_ml(
-                                [
-                                    eval_xmax_diff,
-                                    eval_d_impact,
-                                    eval_energy,
-                                    eval_time_slope,
-                                ],
+                                np.array(
+                                    [
+                                        eval_xmax_diff,
+                                        eval_d_impact,
+                                        eval_energy,
+                                        eval_time_slope / 10,
+                                    ]
+                                ).reshape(1, 4),
                                 time_template,
                             )
 
